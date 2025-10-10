@@ -1,0 +1,10 @@
+let body = JSON.parse($response.body);
+
+// 修改响应体内容
+body = {
+    "i": "V330",
+    "r": 0,
+    "e": "9D9ICLXK-16ceGtlRlji8m9klzsTqXhzItOlrHl5Uauk6QwanKGXJ_hki4_2N6ap1cfmXjlGEC63eyopUsg1KP3Pe02nggG0l7pFPAD-p39tgNbhMHKDj0qrEvAH5Q58N1RtUTkkkHngBop5C918adS-MNYa8kxJUmWmRdEmYzWFZmnjAw9WsHa0ra4i6nNU1tSwjXk1w9GfUV5NJSnAvSWkGx3ipm9hAE6KV3n7lmhLET7WzrbIwvor9-yCAJGUTLa9ZtlCJ6fZCcTeG_R2BXIIqPSj32o0xVThSHrhGKRwggg09jrdwx8XD5H671EyJ9xE4b2I427g1D5i4h9ksbccCohKH59shpRz5u3elJcvfezbPiKxGxyE4lB-B3InoB6kjVKy-uXHx2KDi3qshVeUKYfD9s8Nt3qDcz1X_azW3dK-faW5XkI5OI3u8M-OyQujhp1W6I8qJ2Tg8BP1Ci_S31ydYZo0yUYKmu8sC_6zcEfSYIwrd_EtzamPIt3FbTMJEYAxFfPaeSnaZqFBBxcHI_WSf774H8LBaE0ClK8Yi0x83RRxXoiQenk7fgByGaBTVcdoJ8zjVNjzx8PKUX2l5Je5R9r447KzyZ6Nv_hgwdMl_yZzuJ2DCeeqsVggTz0_TpAxy1417_I_qDh7TBGTjA7FkeNTXzglJGkZeqnWyGspeOz0v1m6crjV4i3iab0Ks1Cjv9kWGAyPKV4pdqy2Bh2fxKgDR01_yL8GmaU72wD-hCKQOEJP6Plr7vziFdxlx0G9IjBiKzfo3WSokAnk7pW6Ii_0TkIUxWXgjUxaRAg4yUFzlrSdhPw9hM9z"
+};
+
+$done({body: JSON.stringify(body)});
