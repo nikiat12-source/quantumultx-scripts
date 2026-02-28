@@ -1,7 +1,7 @@
 // QX Script: tg_push_live.js
 // 作用: 监控特定的视频流请求，并将 URL 推送到 Telegram 机器人。
 
-const tgToken = "8371441808:AAE2xMxBvRIZ4c_hnOWbz7yt1BEZdb_OqYI";
+
 const tgChatId = "您的实际Chat_ID"; // 请替换为您真实的 Chat ID
 
 let requestUrl = $request.url;
