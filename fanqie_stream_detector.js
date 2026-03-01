@@ -1,8 +1,8 @@
 /**
- * Quantumult X 直播源抓取与通知脚本 (进阶双拦截版)
+ * Quantumult X 直播源抓取与通知脚本 (进阶防干扰版)
  *
  * 1. 针对 HTTP-FLV 拉流请求，直接通过 request-header 提取
- * 2. 针对 API 响应，通过 response-body 提取
+ * 2. 针对 API 响应，通过 response-body 提取，且绝对不破坏源数据
  */
 
 let url = $request.url;
@@ -23,7 +23,7 @@ if (typeof $response === "undefined") {
         console.log("直接嗅探到拉流链接: " + extracted);
     }
 
-    // 放行请求
+    // 放行请求，不修改任何头信息
     $done({});
 }
 // 如果是 API 响应拦截 (script-response-body)
@@ -33,12 +33,12 @@ else {
 
     if (body) {
         try {
-            let decodedBody = body.replace(/\\u/g, "%u").replace(/\\/g, "");
-            decodedBody = unescape(decodedBody);
+            // 简单处理 JSON 转义字符防止截断
+            let cleanBody = body.replace(/\\\//g, '/');
 
-            let rtmpMatch = decodedBody.match(/rtmp:\/\/[^\s'"<>\\]+/g) || [];
-            let webrtcMatch = decodedBody.match(/webrtc:\/\/[^\s'"<>\\]+/g) || [];
-            let szierMatch = decodedBody.match(/[a-z0-9-]+\.szier2\.com\/live\/[a-z0-9_]+\?txSecret=[a-f0-9]+&txTime=[a-f0-9]+/g) || [];
+            let rtmpMatch = cleanBody.match(/rtmp:\/\/[^\s'"<>\\]+/g) || [];
+            let webrtcMatch = cleanBody.match(/webrtc:\/\/[^\s'"<>\\]+/g) || [];
+            let szierMatch = cleanBody.match(/[a-z0-9-]+\.szier2\.com\/live\/[a-z0-9_]+\?txSecret=[a-f0-9]+&txTime=[a-f0-9]+/g) || [];
 
             rtmpMatch.forEach(link => {
                 if (link.includes("sourcelandchina.com")) {
@@ -64,5 +64,6 @@ else {
         console.log("API 抓取成功:\n" + message);
     }
 
-    $done({ body: $response.body });
+    // 🔥🔥🔥 极其关键：只做读取，绝对不可以替换 $response.body！否则会破坏原 App 数据导致 App 内报错网络异常！
+    $done({});
 }
