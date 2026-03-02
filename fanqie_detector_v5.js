@@ -26,36 +26,57 @@ if (typeof $response === "undefined") {
                         let streamName = log.streamName;
 
                         if (domain && streamName && streamName.includes("txSecret")) {
-                            // 拼出完整的 webrtc 链接
-                            let webrtcUrl = "webrtc://" + domain + "/live/" + streamName;
-                            foundUrls.push(webrtcUrl);
+                            // 改成 RTMP 格式要求
+                            let rtmpUrl = "rtmp://" + domain + "/live/" + streamName;
+                            foundUrls.push(rtmpUrl);
                         }
                     });
                 }
             } catch (e) {
-                // JSON 解析失败，用正则兜底
-                let urlMatches = body.match(/(webrtc|rtmp):\/\/[^\s"'<>\\]+/g);
-                if (urlMatches) {
-                    foundUrls.push(...urlMatches);
-                }
+                // 回退机制
             }
         }
 
         if (foundUrls.length > 0) {
             let uniqueUrls = [...new Set(foundUrls)];
-            let msg = uniqueUrls.join('\n\n');
-            $notify("🎯 番茄直播源获取成功", "共捕获 " + uniqueUrls.length + " 个", msg, { "clipboard": uniqueUrls[0] });
+            let msg = uniqueUrls.join('\n');
+
+            // 向电脑端 Python 脚本发送数据 (请将 192.168.x.x 替换为你电脑的局域网 IPv4 地址)
+            let pc_ip = "192.168.6.101"; // <--- 用户需要手动修改这里
+            let uploadRequest = {
+                url: "http://" + pc_ip + ":8239/submit",
+                method: "POST",
+                headers: {
+                    "Content-Type": "text/plain"
+                },
+                body: msg
+            };
+            $task.fetch(uploadRequest).then(response => {
+                // 静默成功
+            }, reason => {
+                // 静默失败
+            });
         }
 
-        $done({}); // 放行，不影响 App 正常上报
+        $done({});
     }
     // 拦截拉流请求 (script-request-header)
     else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
-        let extracted = url.replace(/^https?:\/\//, "webrtc://");
+        let extracted = url.replace(/^https?:\/\//, "rtmp://");
         if (url.includes("sourcelandchina.com")) {
             extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
         }
-        $notify("📡 直接抓取推流地址", "domain: " + url.split('/')[2], extracted, { "clipboard": extracted });
+
+        let pc_ip = "192.168.6.101"; // <--- 用户需要手动修改这里
+        let uploadRequest = {
+            url: "http://" + pc_ip + ":8239/submit",
+            method: "POST",
+            headers: {
+                "Content-Type": "text/plain"
+            },
+            body: extracted
+        };
+        $task.fetch(uploadRequest).then(response => { }, reason => { });
         $done({});
     }
     else {
