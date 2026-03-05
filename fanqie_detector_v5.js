@@ -1,6 +1,6 @@
 /**
- * Quantumult X 直播源抓取脚本 (v5.1 - 去重增强版)
- * 功能：拦截直播源，实现“一房间一发”，支持 WiFi 和 Telegram 远程双发
+ * Quantumult X 直播源抓取脚本 (v5.2 - 时效自适应版)
+ * 功能：拦截直播源，基于 房间ID + 时间戳 去重，确保获取最新有效期
  */
 
 const pc_ip = "192.168.6.101"; 
@@ -11,16 +11,18 @@ let url = $request.url;
 
 // ===== 核心逻辑 =====
 if (typeof $response === "undefined") {
-    // 1. 过滤 & 提取唯一 ID
-    let streamId = extractStreamId(url);
-    if (streamId) {
-        // 检查是否已经发送过该 ID (去重)
-        let lastSentId = $prefs.valueForKey("last_sent_stream_id");
-        if (lastSentId !== streamId) {
-            // 设置新 ID
-            $prefs.setValueForKey(streamId, "last_sent_stream_id");
+    // 提取关键特征：房间 ID + 时间戳 (txTime)
+    // 只有当两者组合不同时，才视为新源，解决老板“进出直播间刷新有效期”的需求
+    let sessionKey = extractSessionKey(url);
+    
+    if (sessionKey) {
+        let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
+        
+        if (lastSessionKey !== sessionKey) {
+            // 保存当前特征值
+            $prefs.setValueForKey(sessionKey, "last_sent_session_key");
             
-            // 执行发送
+            // 转换为拉流格式
             let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
             processResult(extracted);
         }
@@ -32,10 +34,20 @@ if (typeof $response === "undefined") {
 
 // ===== 辅助函数 =====
 
-// 从 URL 中提取直播间唯一标识 (例如 s1319367283)
-function extractStreamId(url) {
-    let match = url.match(/\/live\/([^\s?/_]+)/);
-    return match ? match[1] : null;
+/**
+ * 提取会话特征值
+ * 格式：房间名_时间戳 (例如 s1319367283_69a9eeae)
+ */
+function extractSessionKey(url) {
+    let idMatch = url.match(/\/live\/([^\s?/_]+)/);
+    let timeMatch = url.match(/txTime=([a-zA-Z0-9]+)/);
+    
+    if (idMatch) {
+        let id = idMatch[1];
+        let time = timeMatch ? timeMatch[1] : "notime";
+        return `${id}_${time}`;
+    }
+    return null;
 }
 
 function processResult(msg) {
@@ -66,7 +78,7 @@ function uploadToTG(msg) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: TG_CHAT_ID,
-            text: `🛰️ [远程捕获] 发现新流:\n${msg}`
+            text: `🛰️ [远程捕获] 发现新流 (有效期更新):\n${msg}`
         })
     };
     $task.fetch(tgRequest).then(resp => {
