@@ -1,89 +1,88 @@
 /**
- * Quantumult X 直播源自动抓取脚本 (V5 字段修正终极版)
- *
- * 思路：拦截 App 向华为云实时上报的播放日志，提取明文 domain + streamName 拼成 webrtc:// 链接
- * 该日志在进入直播间约1秒内即发出，链接完全新鲜有效！
+ * Quantumult X 直播源抓取脚本 (v5.0 - 电报远程增强版)
+ * 功能：拦截直播源并同时通过 本地局域网 和 Telegram Bot 发送
+ * 适用：WiFi/移动网络/流量 全场景通用
  */
+
+const pc_ip = "192.168.6.101"; 
+const TG_BOT_TOKEN = "8371441808:AAE2xMxBvRIZ4c_hnOWbz7yt1BEZdb_OqYI";
+const TG_CHAT_ID = "1277218326";
 
 let url = $request.url;
 
-// ===== 拦截华为云日志上报 (script-request-body) =====
+// ===== 拦截逻辑 =====
 if (typeof $response === "undefined") {
-
-    // 拦截 hwcloudlive 日志上报
+    // 1. 拦截华为云日志上报 (script-request-body)
     if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
         let body = $request.body;
         let foundUrls = [];
-
         if (body) {
             try {
                 let logData = JSON.parse(body);
                 if (logData && logData.logs) {
                     logData.logs.forEach(function (log) {
-                        // 关键字段：domain 和 streamName
-                        // 只处理 startPlay 事件 (event 201) 或者包含 txSecret 的 streamName
-                        let domain = log.domain;
-                        let streamName = log.streamName;
-
-                        if (domain && streamName && streamName.includes("txSecret")) {
-                            // 改成 RTMP 格式要求
-                            let rtmpUrl = "rtmp://" + domain + "/live/" + streamName;
-                            foundUrls.push(rtmpUrl);
+                        if (log.domain && log.streamName && log.streamName.includes("txSecret")) {
+                            foundUrls.push("rtmp://" + log.domain + "/live/" + log.streamName);
                         }
                     });
                 }
-            } catch (e) {
-                // 回退机制
-            }
+            } catch (e) {}
         }
-
-        if (foundUrls.length > 0) {
-            let uniqueUrls = [...new Set(foundUrls)];
-            let msg = uniqueUrls.join('\n');
-
-            // 向电脑端 Python 脚本发送数据 (请将 192.168.x.x 替换为你电脑的局域网 IPv4 地址)
-            let pc_ip = "192.168.6.101"; // <--- 用户需要手动修改这里
-            let uploadRequest = {
-                url: "http://" + pc_ip + ":8239/submit",
-                method: "POST",
-                headers: {
-                    "Content-Type": "text/plain"
-                },
-                body: msg
-            };
-            $task.fetch(uploadRequest).then(response => {
-                // 静默成功
-            }, reason => {
-                // 静默失败
-            });
-        }
-
+        if (foundUrls.length > 0) processResult(foundUrls.join('\n'));
         $done({});
-    }
-    // 拦截拉流请求 (script-request-header)
+    } 
+    // 2. 拦截拉流请求 (script-request-header)
     else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
         let extracted = url.replace(/^https?:\/\//, "rtmp://");
         if (url.includes("sourcelandchina.com")) {
-            extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
+            extracted = extracted.replace(/livefpad/g, "live");
         }
-
-        let pc_ip = "192.168.6.101"; // <--- 用户需要手动修改这里
-        let uploadRequest = {
-            url: "http://" + pc_ip + ":8239/submit",
-            method: "POST",
-            headers: {
-                "Content-Type": "text/plain"
-            },
-            body: extracted
-        };
-        $task.fetch(uploadRequest).then(response => { }, reason => { });
+        processResult(extracted);
         $done({});
     }
     else {
         $done({});
     }
-}
-// ===== 拦截 API 响应 (script-response-body) - 调试用 =====
-else {
+} else {
     $done({});
+}
+
+// ===== 处理结果：双路发送 =====
+function processResult(msg) {
+    // 路径 A: 本地局域网 (WiFi 环境高效直连)
+    uploadToLocal(msg);
+    
+    // 路径 B: Telegram Bot (移动/流量环境远程同步)
+    uploadToTG(msg);
+}
+
+function uploadToLocal(msg) {
+    let uploadRequest = {
+        url: `http://${pc_ip}:8239/submit`,
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: msg
+    };
+    $task.fetch(uploadRequest).then(resp => {
+        console.log("✅ [Local] 上传成功");
+    }, err => {
+        console.log("ℹ️ [Local] 局域网不可达 (可能是流量模式)");
+    });
+}
+
+function uploadToTG(msg) {
+    let tgRequest = {
+        url: `https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            chat_id: TG_CHAT_ID,
+            text: `🛰️ [远程捕获] 发现新流:\n${msg}`
+        })
+    };
+    $task.fetch(tgRequest).then(resp => {
+        console.log("✅ [TG] 推送成功");
+    }, err => {
+        console.log("❌ [TG] 推送失败");
+    });
 }
