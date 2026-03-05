@@ -1,7 +1,6 @@
 /**
- * Quantumult X 直播源抓取脚本 (v5.0 - 电报远程增强版)
- * 功能：拦截直播源并同时通过 本地局域网 和 Telegram Bot 发送
- * 适用：WiFi/移动网络/流量 全场景通用
+ * Quantumult X 直播源抓取脚本 (v5.1 - 去重增强版)
+ * 功能：拦截直播源，实现“一房间一发”，支持 WiFi 和 Telegram 远程双发
  */
 
 const pc_ip = "192.168.6.101"; 
@@ -10,49 +9,39 @@ const TG_CHAT_ID = "1277218326";
 
 let url = $request.url;
 
-// ===== 拦截逻辑 =====
+// ===== 核心逻辑 =====
 if (typeof $response === "undefined") {
-    // 1. 拦截华为云日志上报 (script-request-body)
-    if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
-        let body = $request.body;
-        let foundUrls = [];
-        if (body) {
-            try {
-                let logData = JSON.parse(body);
-                if (logData && logData.logs) {
-                    logData.logs.forEach(function (log) {
-                        if (log.domain && log.streamName && log.streamName.includes("txSecret")) {
-                            foundUrls.push("rtmp://" + log.domain + "/live/" + log.streamName);
-                        }
-                    });
-                }
-            } catch (e) {}
+    // 1. 过滤 & 提取唯一 ID
+    let streamId = extractStreamId(url);
+    if (streamId) {
+        // 检查是否已经发送过该 ID (去重)
+        let lastSentId = $prefs.valueForKey("last_sent_stream_id");
+        if (lastSentId !== streamId) {
+            // 设置新 ID
+            $prefs.setValueForKey(streamId, "last_sent_stream_id");
+            
+            // 执行发送
+            let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
+            processResult(extracted);
         }
-        if (foundUrls.length > 0) processResult(foundUrls.join('\n'));
-        $done({});
-    } 
-    // 2. 拦截拉流请求 (script-request-header)
-    else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
-        let extracted = url.replace(/^https?:\/\//, "rtmp://");
-        if (url.includes("sourcelandchina.com")) {
-            extracted = extracted.replace(/livefpad/g, "live");
-        }
-        processResult(extracted);
-        $done({});
     }
-    else {
-        $done({});
-    }
+    $done({});
 } else {
     $done({});
 }
 
-// ===== 处理结果：双路发送 =====
+// ===== 辅助函数 =====
+
+// 从 URL 中提取直播间唯一标识 (例如 s1319367283)
+function extractStreamId(url) {
+    let match = url.match(/\/live\/([^\s?/_]+)/);
+    return match ? match[1] : null;
+}
+
 function processResult(msg) {
-    // 路径 A: 本地局域网 (WiFi 环境高效直连)
+    // 路径 A: 本地局域网
     uploadToLocal(msg);
-    
-    // 路径 B: Telegram Bot (移动/流量环境远程同步)
+    // 路径 B: Telegram Bot
     uploadToTG(msg);
 }
 
@@ -66,7 +55,7 @@ function uploadToLocal(msg) {
     $task.fetch(uploadRequest).then(resp => {
         console.log("✅ [Local] 上传成功");
     }, err => {
-        console.log("ℹ️ [Local] 局域网不可达 (可能是流量模式)");
+        console.log("ℹ️ [Local] 局域网不可达");
     });
 }
 
