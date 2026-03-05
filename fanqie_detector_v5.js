@@ -1,6 +1,6 @@
 /**
- * Quantumult X 直播源抓取脚本 (v5.2 - 时效自适应版)
- * 功能：拦截直播源，基于 房间ID + 时间戳 去重，确保获取最新有效期
+ * Quantumult X 直播源抓取脚本 (v5.3 - 深度调试版)
+ * 功能：拦截直播源，基于 房间ID + 时间戳 去重，带详细日志输出
  */
 
 const pc_ip = "192.168.6.101"; 
@@ -11,20 +11,28 @@ let url = $request.url;
 
 // ===== 核心逻辑 =====
 if (typeof $response === "undefined") {
-    // 提取关键特征：房间 ID + 时间戳 (txTime)
-    // 只有当两者组合不同时，才视为新源，解决老板“进出直播间刷新有效期”的需求
-    let sessionKey = extractSessionKey(url);
+    console.log("🎬 [Detector] 捕获到请求: " + url.substring(0, 50) + "...");
     
-    if (sessionKey) {
-        let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
+    // 提前识别域名
+    if (url.includes("szier2.com") || url.includes("sourcelandchina.com") || url.includes("hwcloudlive.com")) {
+        let sessionKey = extractSessionKey(url);
+        console.log("🆔 [Detector] 提取 SessionKey: " + sessionKey);
         
-        if (lastSessionKey !== sessionKey) {
-            // 保存当前特征值
-            $prefs.setValueForKey(sessionKey, "last_sent_session_key");
+        if (sessionKey) {
+            let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
+            console.log("📂 [Detector] 历史 Key: " + lastSessionKey);
             
-            // 转换为拉流格式
-            let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
-            processResult(extracted);
+            if (lastSessionKey !== sessionKey) {
+                console.log("🚀 [Detector] 检测到新源或新有效期，准备发送...");
+                $prefs.setValueForKey(sessionKey, "last_sent_session_key");
+                
+                let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
+                processResult(extracted);
+            } else {
+                console.log("💤 [Detector] 链接未变化，已忽略重复发送");
+            }
+        } else {
+            console.log("⚠️ [Detector] 无法从 URL 提取特征值");
         }
     }
     $done({});
@@ -34,26 +42,21 @@ if (typeof $response === "undefined") {
 
 // ===== 辅助函数 =====
 
-/**
- * 提取会话特征值
- * 格式：房间名_时间戳 (例如 s1319367283_69a9eeae)
- */
 function extractSessionKey(url) {
-    let idMatch = url.match(/\/live\/([^\s?/_]+)/);
+    // 兼容不同平台的 ID 提取
+    let idMatch = url.match(/\/live\/([^\s?/_]+)/) || url.match(/streamName=([^&]+)/);
     let timeMatch = url.match(/txTime=([a-zA-Z0-9]+)/);
     
     if (idMatch) {
         let id = idMatch[1];
-        let time = timeMatch ? timeMatch[1] : "notime";
+        let time = timeMatch ? timeMatch[1] : "default";
         return `${id}_${time}`;
     }
     return null;
 }
 
 function processResult(msg) {
-    // 路径 A: 本地局域网
     uploadToLocal(msg);
-    // 路径 B: Telegram Bot
     uploadToTG(msg);
 }
 
@@ -78,12 +81,12 @@ function uploadToTG(msg) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: TG_CHAT_ID,
-            text: `🛰️ [远程捕获] 发现新流 (有效期更新):\n${msg}`
+            text: `🛰️ [在线捕获] 发现新流:\n${msg}`
         })
     };
     $task.fetch(tgRequest).then(resp => {
         console.log("✅ [TG] 推送成功");
     }, err => {
-        console.log("❌ [TG] 推送失败");
+        console.log("❌ [TG] 推送失败: " + JSON.stringify(err));
     });
 }
