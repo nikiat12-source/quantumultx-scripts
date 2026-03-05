@@ -1,6 +1,6 @@
 /**
- * Quantumult X 直播源抓取脚本 (v5.3 - 深度调试版)
- * 功能：拦截直播源，基于 房间ID + 时间戳 去重，带详细日志输出
+ * Quantumult X 直播源抓取脚本 (v5.4 - 华为云深度优化版)
+ * 功能：拦截直播源，针对华为云日志上报进行特殊解析，并实现基于有效期的时间戳去重
  */
 
 const pc_ip = "192.168.6.101"; 
@@ -11,54 +11,76 @@ let url = $request.url;
 
 // ===== 核心逻辑 =====
 if (typeof $response === "undefined") {
-    console.log("🎬 [Detector] 捕获到请求: " + url.substring(0, 50) + "...");
-    
-    // 提前识别域名
-    if (url.includes("szier2.com") || url.includes("sourcelandchina.com") || url.includes("hwcloudlive.com")) {
-        let sessionKey = extractSessionKey(url);
-        console.log("🆔 [Detector] 提取 SessionKey: " + sessionKey);
-        
-        if (sessionKey) {
-            let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
-            console.log("📂 [Detector] 历史 Key: " + lastSessionKey);
-            
-            if (lastSessionKey !== sessionKey) {
-                console.log("🚀 [Detector] 检测到新源或新有效期，准备发送...");
-                $prefs.setValueForKey(sessionKey, "last_sent_session_key");
-                
-                let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
-                processResult(extracted);
-            } else {
-                console.log("💤 [Detector] 链接未变化，已忽略重复发送");
+    // 1. 针对 hwcloudlive 日志上报的特殊处理 (通常是 POST body)
+    if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
+        let body = $request.body;
+        if (body) {
+            try {
+                let logData = JSON.parse(body);
+                if (logData && logData.logs) {
+                    logData.logs.forEach(function (log) {
+                        // 寻找包含直播流信息的日志
+                        if (log.domain && log.streamName) {
+                            let fullUrl = "rtmp://" + log.domain + "/live/" + log.streamName;
+                            processWithDedupe(fullUrl);
+                        }
+                    });
+                }
+            } catch (e) {
+                console.log("❌ [Detector] 解析华为云 Body 失败: " + e);
             }
-        } else {
-            console.log("⚠️ [Detector] 无法从 URL 提取特征值");
         }
+    } 
+    // 2. 针对常规拉流请求的拦截 (szier2 / sourcelandchina)
+    else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
+        let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
+        processWithDedupe(extracted);
     }
+    
     $done({});
 } else {
     $done({});
 }
 
-// ===== 辅助函数 =====
+// ===== 去重 & 发送模块 =====
 
-function extractSessionKey(url) {
-    // 兼容不同平台的 ID 提取
-    let idMatch = url.match(/\/live\/([^\s?/_]+)/) || url.match(/streamName=([^&]+)/);
-    let timeMatch = url.match(/txTime=([a-zA-Z0-9]+)/);
+function processWithDedupe(streamUrl) {
+    let sessionKey = extractKeyFromStream(streamUrl);
+    console.log("🆔 [Detector] 检查特征口令: " + sessionKey);
+
+    if (sessionKey) {
+        let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
+        
+        if (lastSessionKey !== sessionKey) {
+            console.log("🚀 [Detector] 捕获到新信号，发送中...");
+            $prefs.setValueForKey(sessionKey, "last_sent_session_key");
+            
+            // 执行双路发送
+            uploadToLocal(streamUrl);
+            uploadToTG(streamUrl);
+        } else {
+            console.log("💤 [Detector] 有效期内重复信号，已过滤");
+        }
+    }
+}
+
+/**
+ * 从最终生成的直播流 URL 中提取特征
+ * 格式：流ID_时间戳
+ */
+function extractKeyFromStream(sUrl) {
+    let idMatch = sUrl.match(/\/live\/([^\s?/_]+)/);
+    let timeMatch = sUrl.match(/txTime=([a-zA-Z0-9]+)/);
     
     if (idMatch) {
         let id = idMatch[1];
-        let time = timeMatch ? timeMatch[1] : "default";
+        let time = timeMatch ? timeMatch[1] : "fixed";
         return `${id}_${time}`;
     }
     return null;
 }
 
-function processResult(msg) {
-    uploadToLocal(msg);
-    uploadToTG(msg);
-}
+// ===== 通信函数 =====
 
 function uploadToLocal(msg) {
     let uploadRequest = {
@@ -85,8 +107,8 @@ function uploadToTG(msg) {
         })
     };
     $task.fetch(tgRequest).then(resp => {
-        console.log("✅ [TG] 推送成功");
+        console.log("✅ [TG] 发送成功");
     }, err => {
-        console.log("❌ [TG] 推送失败: " + JSON.stringify(err));
+        console.log("❌ [TG] 发送失败");
     });
 }
