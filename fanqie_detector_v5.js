@@ -1,6 +1,6 @@
 /**
- * Quantumult X 直播源抓取脚本 (v5.5 - 终极稳定性增强版)
- * 功能：拦截直播源，针对华为云日志全面解析，增强 ID 提取鲁棒性，精确去重
+ * Quantumult X 直播源抓取脚本 (v5.6 - 静默增强版)
+ * 功能：拦截直播源，实现“一房间一发”，支持电报静默推送（不弹窗提示）
  */
 
 const pc_ip = "192.168.6.101"; 
@@ -11,8 +11,6 @@ let url = $request.url;
 
 // ===== 核心逻辑 =====
 if (typeof $response === "undefined") {
-    console.log("🎬 [Detector] 捕获: " + url.substring(0, 60) + "...");
-    
     // 1. 处理 hwcloudlive 日志 (POST Body)
     if (url.includes("hwcloudlive.com")) {
         let body = $request.body;
@@ -21,7 +19,6 @@ if (typeof $response === "undefined") {
                 let logData = JSON.parse(body);
                 if (logData && logData.logs) {
                     logData.logs.forEach(function (log) {
-                        // 尝试提取 domain 和 streamName
                         let domain = log.domain || "";
                         let streamName = log.streamName || "";
                         if (domain && streamName) {
@@ -30,11 +27,7 @@ if (typeof $response === "undefined") {
                         }
                     });
                 }
-            } catch (e) {
-                console.log("❌ [Detector] JSON 解析失败: " + e);
-            }
-        } else {
-            console.log("⚠️ [Detector] HW 请求无 Body，跳过");
+            } catch (e) {}
         }
     } 
     // 2. 处理常规拉流链接 (GET)
@@ -48,42 +41,30 @@ if (typeof $response === "undefined") {
     $done({});
 }
 
-// ===== 去重与发送核心 =====
+// ===== 去重与发送模块 =====
 
 function processWithDedupe(streamUrl, sourceTag) {
     let sessionKey = generateSessionKey(streamUrl);
     
     if (sessionKey) {
         let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
-        console.log(`🆔 [Detector] (${sourceTag}) SessionKey: ${sessionKey} (之前: ${lastSessionKey})`);
 
         if (lastSessionKey !== sessionKey) {
-            console.log("🚀 [Detector] 发现新有效期，执行双路推送...");
             $prefs.setValueForKey(sessionKey, "last_sent_session_key");
             
+            // 执行双路推送
             uploadToLocal(streamUrl);
-            uploadToTG(streamUrl);
-        } else {
-            console.log("💤 [Detector] 相同有效期链接，已通过去重器");
+            uploadToTG(streamUrl); // 开启静默模式
         }
-    } else {
-        console.log("⚠️ [Detector] 无法从源生成 SessionKey: " + streamUrl.substring(0, 50));
     }
 }
 
-/**
- * 智能生成会话 Key
- * 规则：提取流 ID 的后 8 位 (作为房间特征) + txTime (作为有效期特征)
- */
 function generateSessionKey(sUrl) {
-    // 1. 寻找流 ID (通常在 /live/ 后面或者 streamName= 后面)
     let idMatch = sUrl.match(/\/live\/([^\s?/_&]+)/) || sUrl.match(/streamName=([^\s?/_&]+)/);
-    // 2. 寻找时间戳
     let timeMatch = sUrl.match(/txTime=([A-Fa-f0-9]+)/);
     
     if (idMatch) {
         let fullId = idMatch[1];
-        // 取 ID 最后 8 位，防止链接前缀变化导致判定失效
         let shortId = fullId.length > 8 ? fullId.slice(-8) : fullId;
         let time = timeMatch ? timeMatch[1] : "notime";
         return `${shortId}_${time}`;
@@ -114,11 +95,12 @@ function uploadToTG(msg) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             chat_id: TG_CHAT_ID,
-            text: `🛰️ [智能捕获] 发现新流:\n${msg}`
+            text: `🛰️ [自动抓取] 发现新流:\n${msg}`,
+            disable_notification: true // ✨ 核心：开启静默发送，手机不会震动/弹窗
         })
     };
     $task.fetch(tgRequest).then(resp => {
-        console.log("✅ [TG] 发送成功");
+        console.log("✅ [TG] 静默推送成功");
     }, err => {
         console.log("❌ [TG] 发送失败");
     });
