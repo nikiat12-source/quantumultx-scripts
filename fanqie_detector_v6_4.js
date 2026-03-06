@@ -2,10 +2,12 @@
  * Quantumult X 直播源抓取脚本 - 终极无缓存版 (v6.4)
  * 功能：WiFi 下直连电脑 IP，5G 下通过 Telegram 远程同步。
  * 💡 v6.4 升级：重命名以彻底绕过 QuanX 缓存，强制启用新 Token 芯片。
+ * 💡 v6.7 固化：已焊死群组 ID，5G 下无感同步！
  */
 
 // ===== 用户配置区 =====
 const TG_BOT_TOKEN = "8422879327:AAGj7ZGUfC8vp_ZTrmMFYFo_GeRt0-KW698"; // 明确使用 fasong857bot
+const TG_CHAT_ID = "-5295741692"; // <--- 🛰️ 已由 Antigravity 固化，老板无需修改！
 const PC_IP = "192.168.6.101"; 
 const PC_PORT = "8239";
 // =====================
@@ -47,16 +49,19 @@ function processDiscovery(msg) {
         timeout: 2
     };
     $task.fetch(localRequest).then(
-        resp => console.log("✅ [Local] 局域网同步成功"),
-        err => notifyTG(msg)
+        resp => {
+            console.log("✅ [Local] 局域网同步成功");
+        },
+        err => {
+            console.log("📡 [Remote] 局域网不通，正在通过双星中继发送...");
+            notifyTG(msg);
+        }
     );
 }
 
 function notifyTG(msg) {
     let savedChatID = $prefs.valueForKey("tg_chat_id");
-    // 如果没有 savedChatID，由于脚本无法知道该发给谁，会在此卡住。
-    // 💡 提示：如果老板能在 QuanX 日志看到 Chat ID，请手动填入这里！
-    let chatId = savedChatID || ""; 
+    let chatId = savedChatID || TG_CHAT_ID; 
 
     if (!chatId) {
         console.log("❌ [v6.4] 缺少 Chat ID。请先向机器人发送任意消息后再刷新抓取！");
