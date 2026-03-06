@@ -1,107 +1,91 @@
 /**
- * Quantumult X 直播源抓取脚本 (v5.6 - 静默增强版)
- * 功能：拦截直播源，实现“一房间一发”，支持电报静默推送（不弹窗提示）
+ * Quantumult X 直播源抓取脚本 - 双模驱动版 (fanqie_detector_v5.js)
+ * 功能：WiFi 下直连电脑 IP，5G 下通过 Telegram 远程同步。
+ * 💡 v6.3 升级：解决移动网络下无法抓取的问题。
  */
 
-const pc_ip = "192.168.6.101"; 
-const TG_BOT_TOKEN = "8371441808:AAE2xMxBvRIZ4c_hnOWbz7yt1BEZdb_OqYI";
-const TG_CHAT_ID = "1277218326";
+// ===== 用户配置区 =====
+const TG_BOT_TOKEN = "8422879327:AAGj7ZGUfC8vp_ZTrmMFYFo_GeRt0-KW698"; // fasong857bot
+const PC_IP = "192.168.6.101"; // 老板的电脑内网 IP
+const PC_PORT = "8239";
+// =====================
 
 let url = $request.url;
 
-// ===== 核心逻辑 =====
-if (typeof $response === "undefined") {
-    // 1. 处理 hwcloudlive 日志 (POST Body)
-    if (url.includes("hwcloudlive.com")) {
-        let body = $request.body;
-        if (body) {
-            try {
-                let logData = JSON.parse(body);
-                if (logData && logData.logs) {
-                    logData.logs.forEach(function (log) {
-                        let domain = log.domain || "";
-                        let streamName = log.streamName || "";
-                        if (domain && streamName) {
-                            let fullUrl = "rtmp://" + domain + "/live/" + streamName;
-                            processWithDedupe(fullUrl, "HW-LOG");
-                        }
-                    });
-                }
-            } catch (e) {}
-        }
-    } 
-    // 2. 处理常规拉流链接 (GET)
-    else if (url.includes("szier2.com") || url.includes("sourcelandchina.com")) {
-        let extracted = url.replace(/^https?:\/\//, "rtmp://").replace(/livefpad/g, "live");
-        processWithDedupe(extracted, "DIRECT");
+// 1. 拦截华为云日志 (POST)
+if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
+    let body = $request.body;
+    let foundUrls = [];
+    if (body) {
+        try {
+            let logData = JSON.parse(body);
+            if (logData && logData.logs) {
+                logData.logs.forEach(function (log) {
+                    if (log.domain && log.streamName && log.streamName.includes("txSecret")) {
+                        foundUrls.push("rtmp://" + log.domain + "/live/" + log.streamName);
+                    }
+                });
+            }
+        } catch (e) { }
     }
-    
-    $done({});
-} else {
-    $done({});
+    if (foundUrls.length > 0) processDiscovery(foundUrls.join('\n'));
+} 
+// 2. 拦截协议头 (GET)
+else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
+    let extracted = url.replace(/^https?:\/\//, "rtmp://");
+    if (url.includes("sourcelandchina.com")) {
+        extracted = extracted.replace(/livefpad/g, "live");
+    }
+    processDiscovery(extracted);
 }
 
-// ===== 去重与发送模块 =====
+$done({});
 
-function processWithDedupe(streamUrl, sourceTag) {
-    let sessionKey = generateSessionKey(streamUrl);
-    
-    if (sessionKey) {
-        let lastSessionKey = $prefs.valueForKey("last_sent_session_key");
-
-        if (lastSessionKey !== sessionKey) {
-            $prefs.setValueForKey(sessionKey, "last_sent_session_key");
-            
-            // 执行双路推送
-            uploadToLocal(streamUrl);
-            uploadToTG(streamUrl); // 开启静默模式
-        }
-    }
-}
-
-function generateSessionKey(sUrl) {
-    let idMatch = sUrl.match(/\/live\/([^\s?/_&]+)/) || sUrl.match(/streamName=([^\s?/_&]+)/);
-    let timeMatch = sUrl.match(/txTime=([A-Fa-f0-9]+)/);
-    
-    if (idMatch) {
-        let fullId = idMatch[1];
-        let shortId = fullId.length > 8 ? fullId.slice(-8) : fullId;
-        let time = timeMatch ? timeMatch[1] : "notime";
-        return `${shortId}_${time}`;
-    }
-    return null;
-}
-
-// ===== 通信逻辑 =====
-
-function uploadToLocal(msg) {
-    let uploadRequest = {
-        url: `http://${pc_ip}:8239/submit`,
+/**
+ * 核心：智能分流处理。优先局域网，失败则走电报。
+ */
+function processDiscovery(msg) {
+    // 1. 尝试本地局域网同步 (最快)
+    let localRequest = {
+        url: `http://${PC_IP}:${PC_PORT}/submit`,
         method: "POST",
         headers: { "Content-Type": "text/plain" },
-        body: msg
+        body: msg,
+        timeout: 2 // 快速超时，防止阻塞
     };
-    $task.fetch(uploadRequest).then(resp => {
-        console.log("✅ [Local] 上传成功");
-    }, err => {
-        console.log("ℹ️ [Local] 局域网不可达");
-    });
+
+    $task.fetch(localRequest).then(
+        resp => console.log("✅ [Local] 局域网同步成功"),
+        err => {
+            console.log("📡 [Network] 局域网无法连接，正在启动 TG 远程救援...");
+            notifyTG(msg);
+        }
+    );
 }
 
-function uploadToTG(msg) {
+function notifyTG(msg) {
+    let savedChatID = $prefs.valueForKey("tg_chat_id");
+    // 如果没有 savedChatID，由于脚本无法知道该发给谁，会在此卡住。
+    // 💡 建议：老板请手动将 PC 运行时的 Chat ID 填入下方的默认值中。
+    let chatId = savedChatID || ""; 
+
+    if (!chatId) {
+        console.log("⚠️ [Detector] 缺少 Chat ID。移动网络下必须先向机器人发送任意消息以激活！");
+        return;
+    }
+
     let tgRequest = {
         url: `https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            chat_id: TG_CHAT_ID,
-            text: `🛰️ [自动抓取] 发现新流:\n${msg}`,
-            disable_notification: true // ✨ 核心：开启静默发送，手机不会震动/弹窗
+            chat_id: chatId,
+            text: `🛰️ [5G捕获] 发现新流:\n${msg}`
         })
     };
-    $task.fetch(tgRequest).then(resp => {
-        console.log("✅ [TG] 静默推送成功");
-    }, err => {
-        console.log("❌ [TG] 发送失败");
-    });
+
+    $task.fetch(tgRequest).then(
+        resp => console.log("✅ [TG] 远程推送成功"),
+        reason => console.log("❌ [TG] 推送失败，请检查网络")
+    );
 }
