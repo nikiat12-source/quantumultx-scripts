@@ -1,44 +1,60 @@
 /**
- * Quantumult X 直播源抓取脚本 - 终极无缓存版 (v6.4)
- * 功能：WiFi 下直连电脑 IP，5G 下通过 Telegram 远程同步。
- * 💡 v6.4 升级：重命名以彻底绕过 QuanX 缓存，强制启用新 Token 芯片。
- * 💡 v6.7 固化：已焊死群组 ID，5G 下无感同步！
+ * Quantumult X 直播源抓取脚本 - 终极诊断版 (v7.0)
+ * 功能：WiFi 下直连，5G 下远程，具备实时弹窗反馈。
+ * 💡 v7.0 升级：增加异步保护锁与强制通知，彻底解决“没动静”的问题。
  */
 
 // ===== 用户配置区 =====
-const TG_BOT_TOKEN = "8422879327:AAGj7ZGUfC8vp_ZTrmMFYFo_GeRt0-KW698"; // 明确使用 fasong857bot
-const TG_CHAT_ID = "-5295741692"; // <--- 🛰️ 已由 Antigravity 固化，老板无需修改！
+const TG_BOT_TOKEN = "8422879327:AAGj7ZGUfC8vp_ZTrmMFYFo_GeRt0-KW698"; 
+const TG_CHAT_ID = "-5295741692"; 
 const PC_IP = "192.168.6.101"; 
 const PC_PORT = "8239";
 // =====================
 
 let url = $request.url;
+let isMatch = false;
+let foundMsg = "";
 
-if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
-    let body = $request.body;
-    let foundUrls = [];
-    if (body) {
-        try {
-            let logData = JSON.parse(body);
-            if (logData && logData.logs) {
-                logData.logs.forEach(function (log) {
-                    if (log.domain && log.streamName && log.streamName.includes("txSecret")) {
-                        foundUrls.push("rtmp://" + log.domain + "/live/" + log.streamName);
-                    }
-                });
-            }
-        } catch (e) { }
+try {
+    if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
+        let body = $request.body;
+        let foundUrls = [];
+        if (body) {
+            try {
+                let logData = JSON.parse(body);
+                if (logData && logData.logs) {
+                    logData.logs.forEach(function (log) {
+                        if (log.domain && log.streamName && log.streamName.includes("txSecret")) {
+                            foundUrls.push("rtmp://" + log.domain + "/live/" + log.streamName);
+                        }
+                    });
+                }
+            } catch (e) { console.log("JSON解析失败: " + e); }
+        }
+        if (foundUrls.length > 0) {
+            isMatch = true;
+            foundMsg = foundUrls.join('\n');
+        }
+    } else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
+        let extracted = url.replace(/^https?:\/\//, "rtmp://");
+        if (url.includes("sourcelandchina.com")) {
+            extracted = extracted.replace(/livefpad/g, "live");
+        }
+        isMatch = true;
+        foundMsg = extracted;
     }
-    if (foundUrls.length > 0) processDiscovery(foundUrls.join('\n'));
-} else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
-    let extracted = url.replace(/^https?:\/\//, "rtmp://");
-    if (url.includes("sourcelandchina.com")) {
-        extracted = extracted.replace(/livefpad/g, "live");
+
+    if (isMatch) {
+        // 🚀 [诊断核心] 给老板一个最直接的反馈：手机震动+弹窗！
+        $notify("🛰️ [抓取基站] 发现目标！", "正在同步至电脑...", foundMsg);
+        processDiscovery(foundMsg);
+    } else {
+        $done({});
     }
-    processDiscovery(extracted);
+} catch (e) {
+    $notify("❌ [脚本错误]", "执行异常", e.message);
+    $done({});
 }
-
-$done({});
 
 function processDiscovery(msg) {
     let localRequest = {
@@ -46,39 +62,40 @@ function processDiscovery(msg) {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: msg,
-        timeout: 2
+        timeout: 5
     };
+    
+    // 强制执行异步保护，确保 $done 在请求结束后再被调用
     $task.fetch(localRequest).then(
         resp => {
             console.log("✅ [Local] 局域网同步成功");
+            $done({});
         },
         err => {
-            console.log("📡 [Remote] 局域网不通，正在通过双星中继发送...");
+            console.log("📡 [Remote] 局域网不通，切换 5G 中继...");
             notifyTG(msg);
         }
     );
 }
 
 function notifyTG(msg) {
-    let savedChatID = $prefs.valueForKey("tg_chat_id");
-    let chatId = savedChatID || TG_CHAT_ID; 
-
-    if (!chatId) {
-        console.log("❌ [v6.4] 缺少 Chat ID。请先向机器人发送任意消息后再刷新抓取！");
-        return;
-    }
-
     let tgRequest = {
         url: `https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            chat_id: chatId,
-            text: `🛰️ [v6.4 捕获] 发现新流:\n${msg}`
+            chat_id: TG_CHAT_ID,
+            text: `🛰️ [5G远程抓取] 发现新流:\n${msg}`
         })
     };
     $task.fetch(tgRequest).then(
-        resp => console.log("✅ [TG] 远程推送成功"),
-        reason => console.log("❌ [TG] 推送失败")
+        resp => {
+            console.log("✅ [TG] 远程推送成功");
+            $done({});
+        },
+        reason => {
+            console.log("❌ [TG] 推送失败");
+            $done({});
+        }
     );
 }
