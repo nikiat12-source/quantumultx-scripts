@@ -6,7 +6,7 @@
 
 // ===== 配置区 =====
 const PC_IP = "192.168.6.101";
-const PC_PORT = "8239";
+const PC_PORT = "8309";
 // =================
 
 let url = $request.url;
