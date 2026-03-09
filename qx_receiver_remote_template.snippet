@@ -1,0 +1,11 @@
+; Quantumult X remote rewrite template
+; Do not import the two .js files as rewrite resources directly.
+; Import this snippet instead.
+; Replace example\.com with your real test domain before final use.
+
+[rewrite_local]
+^https?:\/\/example\.com\/.* url script-request-header https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_request_url.js
+^https?:\/\/example\.com\/api\/.* url script-response-body https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_response_urls.js
+
+[mitm]
+hostname = example.com
