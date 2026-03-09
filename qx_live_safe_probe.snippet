@@ -1,0 +1,8 @@
+; Quantumult X safe live probe
+; Safer probe for room entry: only watches the plain HTTP HLS gateway.
+; Import as a remote rewrite resource with resource parser OFF.
+
+[rewrite_local]
+^http:\/\/119\.45\.92\.135:887\/api\/hls\/live\/get\/.* url script-request-header https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_request_url.js
+^http:\/\/119\.45\.92\.135:887\/api\/hls\/live\/get\/.* url script-response-body https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_response_urls.js
+
