@@ -1,0 +1,12 @@
+; Quantumult X precise live probe
+; Import this snippet as a remote rewrite resource.
+; Resource parser should stay OFF.
+
+[rewrite_local]
+^https?:\/\/211\.154\.21\.150:8020\/api\/live\/room\/detail.* url script-request-header https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_request_url.js
+^http:\/\/119\.45\.92\.135:887\/api\/hls\/live\/get\/.* url script-request-header https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_request_url.js
+^http:\/\/119\.45\.92\.135:887\/api\/hls\/live\/get\/.* url script-response-body https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_response_urls.js
+^https?:\/\/zd4xl\.ooat88\.com\/live\/.* url script-request-header https://raw.githubusercontent.com/nikiat12-source/quantumultx-scripts/main/qx_report_request_url.js
+
+[mitm]
+hostname = 211.154.21.150, zd4xl.ooat88.com

@@ -11,7 +11,7 @@ const RECEIVER_URL = "http://192.168.6.101:8310/submit";
 const SOURCE = "QuantumultX";
 const DEVICE = "iPhone";
 const KIND = "response-body";
-const URL_PATTERN = /(rtmp:\/\/[^\s"'<>]+|https?:\/\/[^\s"'<>]+(?:\.m3u8|\.flv)[^\s"'<>]*)/ig;
+const URL_PATTERN = /(rtmp:\/\/[^\s"'<>]+|https?:\/\/[^\s"'<>]+)/ig;
 
 function finish(body) {
   $done({ body });
