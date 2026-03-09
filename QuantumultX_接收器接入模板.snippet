@@ -1,0 +1,11 @@
+; Quantumult X 通用接收器接入模板
+; 这一版只做“上报到电脑”，不改请求、不改响应。
+; 使用前请先把脚本文件放到 Quantumult X 的 Scripts 目录。
+; 然后把下面的 example\.com 改成你自己的测试域名或测试接口。
+
+[rewrite_local]
+^https?:\/\/example\.com\/.* url script-request-header qx_report_request_url.js
+^https?:\/\/example\.com\/api\/.* url script-response-body qx_report_response_urls.js
+
+[mitm]
+hostname = example.com
