@@ -62,6 +62,36 @@ function collectCandidates() {
   if (body) {
     const bodyMatches = body.match(STREAM_RE);
     if (bodyMatches) hits.push(...bodyMatches);
+    try {
+      const obj = JSON.parse(body);
+      const queue = [obj];
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current) continue;
+        if (typeof current === "string") {
+          const strMatches = current.match(STREAM_RE);
+          if (strMatches) hits.push(...strMatches);
+          continue;
+        }
+        if (Array.isArray(current)) {
+          queue.push(...current);
+          continue;
+        }
+        if (typeof current === "object") {
+          for (const key of Object.keys(current)) {
+            const value = current[key];
+            if (
+              typeof value === "string" &&
+              /^(url|playurl|play_url|flv|m3u8|pullstreamaddr360|pullstreamaddr540|pullstreamaddr720)$/i.test(key)
+            ) {
+              hits.push(value);
+            } else if (value && (typeof value === "object" || Array.isArray(value))) {
+              queue.push(value);
+            }
+          }
+        }
+      }
+    } catch (e) {}
   }
   return unique(hits)
     .filter(url => !/_one_/i.test(url))
