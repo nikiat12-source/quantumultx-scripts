@@ -1,8 +1,8 @@
 /*
   91直播 Quantumult X 抓正常链接调试版
   目标：
-  1. 先确认 Quantumult X 规则有没有命中
-  2. 命中后把 request_url / response 里的 flv/m3u8 发回 ntfy
+  1. 直接抓 pl.ycscts.com 的 flv/m3u8
+  2. 记录 iwl.mwnvfk.com 请求，便于继续反推业务层
   3. 当前只处理正常链接，不碰 _one_
 */
 
