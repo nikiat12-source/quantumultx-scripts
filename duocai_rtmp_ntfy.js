@@ -14,6 +14,9 @@ const DEDUPE_TIME_KEY = "qx_duocai_capture_time";
 const DEDUPE_SECONDS = 8;
 
 const STREAM_RE = /(webrtc:\/\/[^\s"'<>]+|rtmp:\/\/[^\s"'<>]+|https?:\/\/[^\s"'<>]+?\.(?:flv|m3u8)(?:\?[^\s"'<>]*)?)/ig;
+const DUOCAI_UA_RE = /%E5%A4%9A%E5%BD%A9|多彩|CFNetwork\/3860\.500\.112/i;
+const DUOCAI_HOST_RE = /(sdkdc\.tlivesdk\.com|sourcelandchina\.com|hebeisaixin\.com|7kv5kqq7k77g)/i;
+const CLUE_RE = /(liteav|play_url|playUrl|stream_url|streamUrl|str_stream_url|rtmp:\/\/|webrtc:\/\/|\.flv|\.m3u8|<playpath>)/i;
 
 function nowSeconds() {
   return Math.floor(Date.now() / 1000);
@@ -46,6 +49,18 @@ function matchUrls(text) {
   return matches ? Array.from(new Set(matches.map(item => String(item).trim()).filter(Boolean))) : [];
 }
 
+function shouldCapture(requestUrl, requestHeaders, requestBody, responseBody) {
+  const requestUrlText = pickText(requestUrl);
+  const requestHeadersText = buildHeadersText(requestHeaders, "");
+  const joined = [requestUrlText, requestHeadersText, pickText(requestBody), pickText(responseBody)].join("\n");
+  const ua = `${requestHeaders["User-Agent"] || requestHeaders["user-agent"] || ""}`;
+  if (DUOCAI_HOST_RE.test(requestUrlText)) return true;
+  if (DUOCAI_UA_RE.test(ua)) return true;
+  if (DUOCAI_UA_RE.test(requestHeadersText) && CLUE_RE.test(joined)) return true;
+  if (CLUE_RE.test(joined) && DUOCAI_UA_RE.test(joined)) return true;
+  return false;
+}
+
 function buildHeadersText(headers, startLine) {
   const lines = [];
   if (startLine) lines.push(startLine);
@@ -63,6 +78,10 @@ function buildPayload() {
   const responseHeaders = (typeof $response !== "undefined" && $response && $response.headers) ? $response.headers : {};
   const requestBody = truncate(($request && typeof $request.body !== "undefined") ? $request.body : "", 12000);
   const responseBody = truncate((typeof $response !== "undefined" && $response && typeof $response.body !== "undefined") ? $response.body : "", 16000);
+
+  if (!shouldCapture(requestUrl, requestHeaders, requestBody, responseBody)) {
+    return null;
+  }
 
   const candidates = [
     ...matchUrls(requestUrl),
@@ -111,6 +130,10 @@ function pushToNtfy(payload) {
 
 async function main() {
   const built = buildPayload();
+  if (!built) {
+    $done({});
+    return;
+  }
   if (shouldSkip(built.marker)) {
     $done({});
     return;
