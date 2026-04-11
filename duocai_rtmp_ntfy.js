@@ -78,6 +78,7 @@ function buildPayload() {
   const responseHeaders = (typeof $response !== "undefined" && $response && $response.headers) ? $response.headers : {};
   const requestBody = truncate(($request && typeof $request.body !== "undefined") ? $request.body : "", 12000);
   const responseBody = truncate((typeof $response !== "undefined" && $response && typeof $response.body !== "undefined") ? $response.body : "", 16000);
+  const hookPhase = (typeof $response !== "undefined" && $response) ? "response-body" : (requestBody ? "request-body" : "request-header");
 
   if (!shouldCapture(requestUrl, requestHeaders, requestBody, responseBody)) {
     return null;
@@ -102,6 +103,7 @@ function buildPayload() {
     payload: {
       source: "QuantumultX",
       kind: "capture_bundle",
+      hook_phase: hookPhase,
       request_url: requestUrl,
       request_method: method,
       request_headers_text: buildHeadersText(requestHeaders, `${method} ${requestUrl}`),
