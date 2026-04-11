@@ -1,17 +1,17 @@
 /*
-  Duocai Quantumult X normal live URL capture - ntfy relay edition
+  Duocai Quantumult X capture relay - ntfy edition
   Goal:
-  1. Capture already-formed rtmp/webrtc/flv/m3u8 links from request/response
-  2. Forward them to ntfy for the desktop receiver
-  3. Avoid touching binary liteav request bodies
+  1. Forward request/response texts to desktop
+  2. Preserve enough material for later desktop-side analysis
+  3. Still report direct live URLs when they appear
 */
 
 const NTFY_SERVER = "https://ntfy.sh";
 const NTFY_TOPIC = "duocai-relay-mobile-ntfy";
 const MESSAGE_PREFIX = "QX_STREAM";
-const DEDUPE_KEY = "qx_duocai_last_url";
-const DEDUPE_TIME_KEY = "qx_duocai_last_time";
-const DEDUPE_SECONDS = 20;
+const DEDUPE_KEY = "qx_duocai_capture_marker";
+const DEDUPE_TIME_KEY = "qx_duocai_capture_time";
+const DEDUPE_SECONDS = 8;
 
 const STREAM_RE = /(webrtc:\/\/[^\s"'<>]+|rtmp:\/\/[^\s"'<>]+|https?:\/\/[^\s"'<>]+?\.(?:flv|m3u8)(?:\?[^\s"'<>]*)?)/ig;
 
@@ -19,78 +19,89 @@ function nowSeconds() {
   return Math.floor(Date.now() / 1000);
 }
 
-function unique(list) {
-  const seen = {};
-  const out = [];
-  for (const item of list) {
-    const key = String(item || "").trim();
-    if (!key || seen[key]) continue;
-    seen[key] = true;
-    out.push(key);
-  }
-  return out;
-}
-
-function shouldSkip(url) {
-  const lastUrl = $prefs.valueForKey(DEDUPE_KEY) || "";
+function shouldSkip(marker) {
+  const last = $prefs.valueForKey(DEDUPE_KEY) || "";
   const lastTime = parseInt($prefs.valueForKey(DEDUPE_TIME_KEY) || "0", 10);
-  return lastUrl === url && nowSeconds() - lastTime < DEDUPE_SECONDS;
+  return last === marker && nowSeconds() - lastTime < DEDUPE_SECONDS;
 }
 
-function remember(url) {
-  $prefs.setValueForKey(url, DEDUPE_KEY);
+function remember(marker) {
+  $prefs.setValueForKey(marker, DEDUPE_KEY);
   $prefs.setValueForKey(String(nowSeconds()), DEDUPE_TIME_KEY);
 }
 
-function collectCandidates() {
-  const hits = [];
-  const requestUrl = ($request && $request.url) || "";
-  const requestBody = ($request && typeof $request.body !== "undefined") ? String($request.body || "") : "";
-  const responseBody = (typeof $response !== "undefined" && $response && typeof $response.body !== "undefined")
-    ? String($response.body || "")
-    : "";
-
-  if (requestUrl) {
-    const reqUrlMatches = requestUrl.match(STREAM_RE);
-    if (reqUrlMatches) hits.push(...reqUrlMatches);
-    if (/^(?:webrtc|rtmp):\/\//i.test(requestUrl) || /\.(?:flv|m3u8)(?:\?|$)/i.test(requestUrl)) {
-      hits.push(requestUrl);
-    }
-  }
-
-  if (requestBody) {
-    const reqBodyMatches = requestBody.match(STREAM_RE);
-    if (reqBodyMatches) hits.push(...reqBodyMatches);
-  }
-
-  if (responseBody) {
-    const respBodyMatches = responseBody.match(STREAM_RE);
-    if (respBodyMatches) hits.push(...respBodyMatches);
-  }
-
-  return unique(hits);
+function pickText(value) {
+  if (typeof value === "undefined" || value === null) return "";
+  return String(value);
 }
 
-function pushToNtfy(url) {
+function truncate(text, maxLen) {
+  const input = pickText(text);
+  return input.length > maxLen ? input.slice(0, maxLen) : input;
+}
+
+function matchUrls(text) {
+  const input = pickText(text);
+  const matches = input.match(STREAM_RE);
+  return matches ? Array.from(new Set(matches.map(item => String(item).trim()).filter(Boolean))) : [];
+}
+
+function buildHeadersText(headers, startLine) {
+  const lines = [];
+  if (startLine) lines.push(startLine);
+  const obj = headers || {};
+  Object.keys(obj).forEach(key => {
+    lines.push(`${key}: ${obj[key]}`);
+  });
+  return lines.join("\n");
+}
+
+function buildPayload() {
   const requestUrl = ($request && $request.url) || "";
-  const payload = {
-    source: "QuantumultX",
-    kind: "normal_live_url",
-    url: url,
-    request_url: requestUrl,
-    captured_at: new Date().toISOString(),
-    extra: {
-      has_request_body: !!(($request && $request.body) || ""),
-      has_response_body: !!((typeof $response !== "undefined" && $response && $response.body) || ""),
+  const method = ($request && $request.method) || "GET";
+  const requestHeaders = ($request && $request.headers) || {};
+  const responseHeaders = (typeof $response !== "undefined" && $response && $response.headers) ? $response.headers : {};
+  const requestBody = truncate(($request && typeof $request.body !== "undefined") ? $request.body : "", 12000);
+  const responseBody = truncate((typeof $response !== "undefined" && $response && typeof $response.body !== "undefined") ? $response.body : "", 16000);
+
+  const candidates = [
+    ...matchUrls(requestUrl),
+    ...matchUrls(requestBody),
+    ...matchUrls(responseBody),
+  ];
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  const marker = [
+    requestUrl,
+    requestBody.slice(0, 240),
+    responseBody.slice(0, 240),
+    uniqueCandidates.slice(0, 3).join("|"),
+  ].join("||");
+
+  return {
+    marker,
+    payload: {
+      source: "QuantumultX",
+      kind: "capture_bundle",
+      request_url: requestUrl,
+      request_method: method,
+      request_headers_text: buildHeadersText(requestHeaders, `${method} ${requestUrl}`),
+      request_body_text: requestBody,
+      response_headers_text: buildHeadersText(responseHeaders, "HTTP/1.1"),
+      response_body_text: responseBody,
+      candidate_urls: uniqueCandidates,
+      captured_at: new Date().toISOString(),
     },
   };
+}
 
+function pushToNtfy(payload) {
   return $task.fetch({
     url: `${NTFY_SERVER}/${NTFY_TOPIC}`,
     method: "POST",
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "Title": "duocai normal live url",
+      "Title": "duocai capture bundle",
       "Priority": "3",
       "Tags": "satellite",
     },
@@ -99,14 +110,17 @@ function pushToNtfy(url) {
 }
 
 async function main() {
-  const candidates = collectCandidates();
-  for (const url of candidates) {
-    if (shouldSkip(url)) continue;
-    remember(url);
-    try {
-      await pushToNtfy(url);
-    } catch (e) {}
+  const built = buildPayload();
+  if (shouldSkip(built.marker)) {
+    $done({});
+    return;
   }
+  remember(built.marker);
+
+  try {
+    await pushToNtfy(built.payload);
+  } catch (e) {}
+
   $done({});
 }
 
