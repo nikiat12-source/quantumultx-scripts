@@ -186,21 +186,48 @@ function getQueryParam(name) {
   return params[name] || "";
 }
 
-function handleAnchorContextRequest() {
-  const map = loadMap();
-  if (url.includes("/OpenAPI/v1/user/profile")) {
-    const uid = getQueryParam("uid");
-    if (!uid) return;
+function handleAnchorProfileResponse() {
+  const body = (typeof $response !== "undefined" && $response && $response.body) ? String($response.body) : "";
+  if (!body || !url.includes("/OpenAPI/v1/user/profile")) return;
+  try {
+    const obj = JSON.parse(body);
+    const data = (obj || {}).data || {};
+    const anchorId = String(data.id || "").trim();
+    const roomId = String(data.curroomnum || "").trim();
+    const nickname = String(data.nickname || "").trim();
+    if (!anchorId || !roomId) return;
+
+    const map = loadMap();
+    const old = map[roomId] || {};
+    map[roomId] = {
+      room_id: roomId,
+      anchor_id: anchorId,
+      nickname: nickname,
+      limit_key: old.limit_key || "",
+      sid: old.sid || "",
+      bsid: old.bsid || "",
+      updated_at: new Date().toISOString(),
+    };
+    saveMap(map);
+
     sendToNtfy({
       source: "QuantumultX",
-      kind: "xmh_anchor_profile_request",
+      kind: "xmh_anchor_profile_response",
       request_url: url,
-      method: method,
-      anchor_id: uid,
-      known_rooms: Object.values(map).filter(x => x.anchor_id === uid).map(x => x.room_id),
+      anchor_id: anchorId,
+      nickname: nickname,
+      room_id: roomId,
+      limit_key: old.limit_key || "",
+      sid: old.sid || "",
+      bsid: old.bsid || "",
       captured_at: new Date().toISOString(),
     });
-  } else if (url.includes("/OpenAPI/v1/private/getPrivateLimit")) {
+  } catch (e) {}
+}
+
+function handleAnchorContextRequest() {
+  const map = loadMap();
+  if (url.includes("/OpenAPI/v1/private/getPrivateLimit")) {
     const uid = getQueryParam("uid");
     if (!uid) return;
     sendToNtfy({
@@ -219,9 +246,11 @@ if (url.includes("hwcloudlive.com") && url.includes("log_report")) {
   handleHwLogReport();
 } else if (url.includes("szier2.com/live") || url.includes("sourcelandchina.com/live")) {
   handleDirectLiveUrl();
+} else if (url.includes("api.qituoc.com/OpenAPI/v1/user/profile") && typeof $response !== "undefined") {
+  handleAnchorProfileResponse();
 } else if (url.includes("api.qituoc.com/OpenAPI/v1/anchor/") && typeof $response !== "undefined") {
   handleAnchorListResponse();
-} else if (url.includes("api.qituoc.com/OpenAPI/v1/user/profile") || url.includes("api.qituoc.com/OpenAPI/v1/private/getPrivateLimit")) {
+} else if (url.includes("api.qituoc.com/OpenAPI/v1/private/getPrivateLimit")) {
   handleAnchorContextRequest();
 }
 
