@@ -98,21 +98,12 @@ function handleHwLogReport() {
       const merged = map[roomId] || {};
       sendToNtfy({
         source: "QuantumultX",
-        kind: "xmh_stream_signature",
-        request_url: url,
-        method: method,
         room_id: roomId,
         anchor_id: merged.anchor_id || "",
         nickname: merged.nickname || "",
         stream_core: streamCore,
-        stream_name: String(log.streamName),
-        domain: log.domain,
-        limit_key: merged.limit_key || "",
-        sid: merged.sid || "",
-        bsid: merged.bsid || "",
         rtmp_url: `rtmp://${log.domain}/live/${log.streamName}`,
         flv_url: `http://${log.domain}/live/${streamCore}.flv?${String(log.streamName).split("?")[1] || ""}`,
-        captured_at: new Date().toISOString(),
       });
     }
   } catch (e) {}
@@ -128,18 +119,12 @@ function handleDirectLiveUrl() {
   const merged = map[roomId] || {};
   sendToNtfy({
     source: "QuantumultX",
-    kind: "xmh_direct_live_url",
-    request_url: url,
-    method: method,
     room_id: roomId,
     anchor_id: merged.anchor_id || "",
     nickname: merged.nickname || "",
     stream_core: streamCore,
-    limit_key: merged.limit_key || "",
-    sid: merged.sid || "",
-    bsid: merged.bsid || "",
-    direct_url: directUrl,
-    captured_at: new Date().toISOString(),
+    rtmp_url: directUrl.replace(/^https?:\/\//, "rtmp://"),
+    flv_url: directUrl.includes(".flv") ? directUrl : "",
   });
 }
 
@@ -212,15 +197,9 @@ function handleAnchorProfileResponse() {
 
     sendToNtfy({
       source: "QuantumultX",
-      kind: "xmh_anchor_profile_response",
-      request_url: url,
       anchor_id: anchorId,
       nickname: nickname,
       room_id: roomId,
-      limit_key: old.limit_key || "",
-      sid: old.sid || "",
-      bsid: old.bsid || "",
-      captured_at: new Date().toISOString(),
     });
   } catch (e) {}
 }
@@ -232,12 +211,8 @@ function handleAnchorContextRequest() {
     if (!uid) return;
     sendToNtfy({
       source: "QuantumultX",
-      kind: "xmh_private_limit_request",
-      request_url: url,
-      method: method,
       anchor_id: uid,
       known_rooms: Object.values(map).filter(x => x.anchor_id === uid).map(x => x.room_id),
-      captured_at: new Date().toISOString(),
     });
   }
 }
