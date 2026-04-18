@@ -1,6 +1,5 @@
 // Quantumult X Script: 91 Live Template Hunter
-// Function: 截获 /room/recommend/anchor/list 的查询发包请求体，并通过 Ntfy 发送给电脑接收端
-
+// Function: 截获特定域名下发出的加密报文请求，推送至电脑端接收器让它进行解密分析
 var ntfy_topic = "xBoss_91Live_GlobalTemplate_Hunter_666";
 
 if ($request) {
@@ -10,7 +9,7 @@ if ($request) {
         var headers = $request.headers;
         var body = $request.body || "";
 
-        if (endpoint.indexOf("/room/recommend/anchor/list") !== -1) {
+        if (method === "POST") {
             var payload = {
                 type: "api_template",
                 url: endpoint,
@@ -32,7 +31,7 @@ if ($request) {
             };
 
             $task.fetch(postRequest).then(response => {
-                console.log("Template published to ntfy successfully.");
+                console.log("Encrypted Template published to ntfy successfully.");
                 $done({});
             }, reason => {
                 console.log("Failed to publish to ntfy: " + reason.error);
